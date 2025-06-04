@@ -6,6 +6,17 @@ use std::{
 
 use chrono::{DateTime, Local};
 use clap::Parser;
+use env_logger::Builder;
+use log::{LevelFilter, debug, error, info};
+
+// 过滤文件
+const IGNORE_FILENAME: [&str; 2] = ["Thumbs.db", ".DS_Store"];
+
+// 允许的文件后缀
+const SUFFIX: [&str; 21] = [
+    "jpg", "mp4", "png", "gif", "bmp", "tiff", "tif", "webp", "svg", "ico", "mp3", "wav", "aac",
+    "ogg", "flac", "m4a", "mov", "avi", "wmv", "mkv", "webm",
+];
 
 #[derive(Parser)]
 #[command(version,about, long_about = None)]
@@ -24,23 +35,38 @@ struct Cli {
 
 // `relo -s /path/to/source -d /path/to/dest`
 fn main() {
+    let mut builder = Builder::new();
+
+    builder
+        .filter_level(LevelFilter::Info) // 设置过滤级别
+        // .format(|buf, record| writeln!(buf, "{}", record.args()))
+        .init();
+
     let cli: Cli = Cli::parse();
 
-    let source = cli.source.expect("原目录不能为空");
-    let dest = cli.dest.expect("目标目录不能为空");
+    let source = cli.source.unwrap_or_default();
+    if source.is_empty() {
+        error!("目录不能为空");
+        return;
+    }
+
+    let dest = cli.dest.unwrap_or_default();
+    if dest.is_empty() {
+        error!("目标目录不能为空");
+        return;
+    }
+
     let all_filepath = get_all_filepath(source);
 
     for filepath in all_filepath.clone() {
-        // let file_create_time = get_file_create_time(filepath.clone());
         copy_file(filepath, dest.clone()).expect("复制文件发生错误");
-        println!("复制文件成功");
     }
 }
 
 fn get_all_filepath(source: String) -> Vec<String> {
     let mut filepath: Vec<String> = Vec::new();
 
-    let folder_path = PathBuf::from(source);
+    let folder_path: PathBuf = PathBuf::from(source);
 
     if !folder_path.exists() {
         println!("文件夹不存在: {}", folder_path.display());
@@ -78,12 +104,44 @@ fn get_all_filepath(source: String) -> Vec<String> {
 fn copy_file(source: String, dest: String) -> io::Result<u64> {
     let (file_name, datetime) = get_file_info(&source);
 
-    let path = mkdir(dest.clone(), datetime).unwrap();
+    if filter_file_name(&file_name) {
+        return Ok(0);
+    }
 
-    let dest_filename = PathBuf::from(format!("{}/{}", path, file_name));
+    let path: String = mkdir(dest.clone(), datetime).unwrap();
+    let dest_filename: PathBuf = PathBuf::from(format!("{}/{}", path, file_name));
 
-    fs::copy(source, dest_filename)?;
+    if is_exist(&dest_filename) {
+        println!("目标文件已存在: {}", dest_filename.to_string_lossy());
+        return Ok(0);
+    }
+
+    fs::copy(source.clone(), dest_filename.clone())?;
+
+    println!(
+        "源文件:{} \n目标文件:{} \n\n",
+        source,
+        dest_filename.to_string_lossy()
+    );
+
     Ok(0)
+}
+
+//
+fn filter_file_name(file_name: &str) -> bool {
+    for igfn in IGNORE_FILENAME {
+        if file_name.eq(igfn) {
+            return true;
+        }
+    }
+
+    for suffix in SUFFIX {
+        if file_name.ends_with(suffix) {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn get_file_info(source: &String) -> (std::borrow::Cow<'_, str>, DateTime<Local>) {
@@ -97,7 +155,7 @@ fn get_file_info(source: &String) -> (std::borrow::Cow<'_, str>, DateTime<Local>
 }
 
 fn mkdir(dest: String, datetime: DateTime<Local>) -> io::Result<String> {
-    let dt = datetime.format("%Y/%m/%d").to_string();
+    let dt = datetime.format("%Y/%m-%d").to_string();
 
     // 使用年月日构建目录
     let dest_dir = format!("{}/{}", dest, dt);
@@ -108,4 +166,10 @@ fn mkdir(dest: String, datetime: DateTime<Local>) -> io::Result<String> {
     }
 
     Ok(dest_dir)
+}
+
+// is_exist 判断文件是否存在
+fn is_exist(file_path: &PathBuf) -> bool {
+    let path = Path::new(file_path.to_str().unwrap());
+    path.exists()
 }
