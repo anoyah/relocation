@@ -150,7 +150,7 @@ fn get_file_info(source: &String) -> (std::borrow::Cow<'_, str>, DateTime<Local>
     let file_name = path.file_name().unwrap().to_string_lossy();
 
     let md = fs::metadata(path).unwrap();
-    let datetime: DateTime<Local> = md.created().unwrap().into();
+    let datetime: DateTime<Local> = md.modified().unwrap().into();
     (file_name, datetime)
 }
 
